@@ -1493,6 +1493,7 @@ private:
 	static int value_size(lua_State *state);
 	static int fixup(lua_State *state);
 	static int is_large_value(lua_State *state);
+	static int value_pos(lua_State *state);
 };
 
 class IntelCommandTypeBinder

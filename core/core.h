@@ -18,6 +18,7 @@ enum ProjectOption {
 	cpResourceProtection    = 0x00010000,
 	cpCheckKernelDebugger	= 0x00020000,
 	cpStripDebugInfo		= 0x00040000,
+	cpAntidebugExport       = 0x00080000,
 
 	cpLoaderCRC				= 0x10000000,
 #ifndef DEMO
@@ -549,8 +550,8 @@ public:
 	WatermarkManager *watermark_manager() const { return watermark_manager_; }
 	ProjectTemplateManager *template_manager() const { return template_manager_; }
 	Script *script() const { return script_; }
-	static const char *copyright() { return "Copyright 2003-2021 VMProtect Software"; }
-	static const char *edition() { return "VMProtect " EDITION; }
+	static const char *copyright() { return "RevengeProtect Toolchain"; }
+	static const char *edition() { return "RevengeProtect " EDITION; }
 	static const char *version();
 	static const char *build();
 	static bool check_license_edition(const VMProtectSerialNumberData &lic);

@@ -665,6 +665,8 @@ private:
 	std::vector<IntelVMCommand *> vm_links_;
 	InternalLinkList internal_links_;
 	std::vector<IntelVMCommand *> jmp_links_;
+	std::vector<uint8_t> raw_dump_;
+	uint8_t raw_value_pos_[3];
 
 	IntelVMCommand *ext_vm_entry_;
 	SectionCryptor *begin_section_cryptor_;

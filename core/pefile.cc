@@ -4621,8 +4621,8 @@ void PEArchitecture::Save(CompileContext &ctx)
 		header_offset_ = new_header_offset;
 	}
 
-	// add antidebug export
-	if ((ctx.options.flags & cpCheckDebugger) && image_type() != itDriver && !import_list()->GetImportByName("dbghelp.dll"))
+	// add antidebug export only when explicitly enabled
+	if ((ctx.options.flags & cpAntidebugExport) && image_type() != itDriver && !import_list()->GetImportByName("dbghelp.dll"))
 		export_list_->AddAntidebug();
 
 	// compile modified objects
@@ -5968,16 +5968,18 @@ void PDBFile::codeview_dump_symbols(const std::vector<uint8_t> &root, size_t off
 		case S_THUNK_V3:
 			AddSymbol(sym->thunk_v3.segment, sym->thunk_v3.offset, std::string(sym->thunk_v3.name));
 			break;
-			//case S_GPROC_V1:
+		case S_GPROC_V1:
 		case S_LPROC_V1:
 			AddSymbol(sym->proc_v1.segment, sym->proc_v1.offset, std::string(sym->proc_v1.p_name.name, sym->proc_v1.p_name.namelen));
 			break;
-			//case S_GPROC_V2:
+		case S_GPROC_V2:
 		case S_LPROC_V2:
 			AddSymbol(sym->proc_v2.segment, sym->proc_v2.offset, std::string(sym->proc_v2.p_name.name, sym->proc_v2.p_name.namelen));
 			break;
 		case S_LPROC_V3:
-			//case S_GPROC_V3:
+		case S_GPROC_V3:
+		case S_LPROC32_VS2013:
+		case S_GPROC32_VS2013:
 			AddSymbol(sym->proc_v3.segment, sym->proc_v3.offset, std::string(sym->proc_v3.name));
 			break;
 		case S_SUBSECTINFO_V3:

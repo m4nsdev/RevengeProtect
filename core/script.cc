@@ -7536,6 +7536,7 @@ void IntelOperandBinder::Register(lua_State *state)
 		{"valueSize", &SafeFunction<value_size>},
 		{"fixup", &SafeFunction<fixup>},
 		{"isLargeValue", &SafeFunction<is_large_value>},
+		{"valuePos", &SafeFunction<value_pos>},
 		{NULL, NULL}
 	};
 
@@ -7609,6 +7610,13 @@ int IntelOperandBinder::is_large_value(lua_State *state)
 {
 	IntelOperand *object = reinterpret_cast<IntelOperand *>(check_object(state, 1, class_name()));
 	lua_pushboolean(state, object->is_large_value);
+	return 1;
+}
+
+int IntelOperandBinder::value_pos(lua_State *state)
+{
+	IntelOperand *object = reinterpret_cast<IntelOperand *>(check_object(state, 1, class_name()));
+	lua_pushinteger(state, object->value_pos);
 	return 1;
 }
 
@@ -8088,6 +8096,7 @@ void ProjectOptionBinder::Register(lua_State *state)
 		{"CheckVirtualMachine", cpCheckVirtualMachine},
 		{"StripFixups", cpStripFixups},
 		{"StripDebugInfo", cpStripDebugInfo},
+		{"AntidebugExport", cpAntidebugExport},
 		{"DebugMode", cpDebugMode},
 		{NULL, 0}
 	};

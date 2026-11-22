@@ -47,12 +47,12 @@ enum {
 #define VMP_STR(s) L##s
 #endif
 
-#define MESSAGE_DEBUGGER_FOUND_STR VMP_STR("A debugger has been found running in your system.\nPlease, unload it from memory and restart your program.")
-#define MESSAGE_VIRTUAL_MACHINE_FOUND_STR VMP_STR("Sorry, this application cannot run under a Virtual Machine.")
-#define MESSAGE_FILE_CORRUPTED_STR VMP_STR("File corrupted! This program has been manipulated and maybe\nit's infected by a Virus or cracked. This file won't work anymore.")
-#define MESSAGE_SERIAL_NUMBER_REQUIRED_STR VMP_STR("This code requires valid serial number to run.\nProgram will be terminated.")
-#define MESSAGE_HWID_MISMATCHED_STR VMP_STR("This application cannot be executed on this computer.")
-#define MESSAGE_UNREGISTERED_VERSION_STR VMP_STR("This application is protected with unregistered version of VMProtect and cannot be executed on this computer.")
+#define MESSAGE_DEBUGGER_FOUND_STR VMP_STR("")
+#define MESSAGE_VIRTUAL_MACHINE_FOUND_STR VMP_STR("")
+#define MESSAGE_FILE_CORRUPTED_STR VMP_STR("")
+#define MESSAGE_SERIAL_NUMBER_REQUIRED_STR VMP_STR("")
+#define MESSAGE_HWID_MISMATCHED_STR VMP_STR("")
+#define MESSAGE_UNREGISTERED_VERSION_STR VMP_STR("")
 
 enum {
 	VAR_IS_PATCH_DETECTED,

@@ -59,7 +59,7 @@ NOINLINE bool LoaderFindFirmwareVendor(const uint8_t *data, size_t data_size)
 
 #define TOLOWER(c) ((c >= 'A' && c <= 'Z') ? c - 'A' + 'a' : c)
 
-int Loader_stricmp(const char *str1, const char *str2, bool is_enc)
+NOINLINE int Loader_stricmp(const char *str1, const char *str2, bool is_enc)
 {
 	unsigned char c1;
 	unsigned char c2;
@@ -84,7 +84,7 @@ int Loader_stricmp(const char *str1, const char *str2, bool is_enc)
 	return 0;
 }
 
-int Loader_strcmp(const char *str1, const char *str2, bool is_enc)
+NOINLINE int Loader_strcmp(const char *str1, const char *str2, bool is_enc)
 {
 	unsigned char c1;
 	unsigned char c2;
@@ -109,7 +109,7 @@ int Loader_strcmp(const char *str1, const char *str2, bool is_enc)
 
 #ifdef WIN_DRIVER
 
-int Loader_cmp_module(const char *str1, const char *str2, bool is_enc)
+NOINLINE int Loader_cmp_module(const char *str1, const char *str2, bool is_enc)
 {
 	unsigned char c1;
 	unsigned char c2;
@@ -1806,25 +1806,27 @@ uint32_t WINAPI SetupImage()
 					set_information_process(process, ProcessInstrumentationCallback, &info, sizeof(info));
 			}
 
-			HANDLE debug_object;
+			HANDLE debug_object = 0;
 			if (NT_SUCCESS(reinterpret_cast<tNtQueryInformationProcess *>(syscall | sc_query_information_process)(process, ProcessDebugPort, &debug_object, sizeof(debug_object), NULL)) && debug_object != 0) {
 				LoaderMessage(mtDebuggerFound);
 				return LOADER_ERROR;
 			}
 			debug_object = 0;
-			if (NT_SUCCESS(reinterpret_cast<tNtQueryInformationProcess *>(syscall | sc_query_information_process)(process, ProcessDebugObjectHandle, &debug_object, sizeof(debug_object), reinterpret_cast<PULONG>(&debug_object))) 
-				|| debug_object == 0) {
+			ULONG return_length = 0;
+			if (NT_SUCCESS(reinterpret_cast<tNtQueryInformationProcess *>(syscall | sc_query_information_process)(process, ProcessDebugObjectHandle, &debug_object, sizeof(debug_object), &return_length))
+				&& debug_object != 0) {
 				LoaderMessage(mtDebuggerFound);
 				return LOADER_ERROR;
 			}
 
 		} else if (tNtQueryInformationProcess *query_information_process = reinterpret_cast<tNtQueryInformationProcess *>(LoaderGetProcAddress(ntdll, reinterpret_cast<const char *>(FACE_NT_QUERY_INFORMATION_PROCESS_NAME), true))) {
-			HANDLE debug_object;
+			HANDLE debug_object = 0;
 			if (NT_SUCCESS(query_information_process(process, ProcessDebugPort, &debug_object, sizeof(debug_object), NULL)) && debug_object != 0) {
 				LoaderMessage(mtDebuggerFound);
 				return LOADER_ERROR;
 			}
-			if (NT_SUCCESS(query_information_process(process, ProcessDebugObjectHandle, &debug_object, sizeof(debug_object), NULL))) {
+			debug_object = 0;
+			if (NT_SUCCESS(query_information_process(process, ProcessDebugObjectHandle, &debug_object, sizeof(debug_object), NULL)) && debug_object != 0) {
 				LoaderMessage(mtDebuggerFound);
 				return LOADER_ERROR;
 			}

@@ -27,6 +27,7 @@ IntelCommand::IntelCommand(IFunction *owner, OperandSize size, uint64_t address)
 	ext_vm_entry_(NULL), begin_section_cryptor_(NULL), end_section_cryptor_(NULL), seh_handler_(NULL)
 {
 	vm_command_info_list_ = new IntelCommandInfoList(size);
+	memset(raw_value_pos_, 0, sizeof(raw_value_pos_));
 	if (address_)
 		include_option(roClearOriginalCode);
 #ifdef CHECKED
@@ -40,6 +41,7 @@ IntelCommand::IntelCommand(IFunction *owner, OperandSize size, IntelCommandType 
 	end_section_cryptor_(NULL), seh_handler_(NULL)
 {
 	vm_command_info_list_ = new IntelCommandInfoList(size);
+	memset(raw_value_pos_, 0, sizeof(raw_value_pos_));
 	type_ = type;
 	operand_[0] = operand1;
 	operand_[1] = operand2;
@@ -62,6 +64,7 @@ IntelCommand::IntelCommand(IFunction *owner, OperandSize size, const std::string
 	vex_operand_(0), ext_vm_entry_(NULL), begin_section_cryptor_(NULL), end_section_cryptor_(NULL), seh_handler_(NULL)
 {
 	vm_command_info_list_ = new IntelCommandInfoList(size);
+	memset(raw_value_pos_, 0, sizeof(raw_value_pos_));
 	type_ = cmDB;
 #ifdef CHECKED
 	update_hash();
@@ -74,6 +77,7 @@ IntelCommand::IntelCommand(IFunction *owner, OperandSize size, const os::unicode
 	ext_vm_entry_(NULL), begin_section_cryptor_(NULL), end_section_cryptor_(NULL), seh_handler_(NULL)
 {
 	vm_command_info_list_ = new IntelCommandInfoList(size);
+	memset(raw_value_pos_, 0, sizeof(raw_value_pos_));
 	type_ = cmDB;
 #ifdef CHECKED
 	update_hash();
@@ -86,6 +90,7 @@ IntelCommand::IntelCommand(IFunction *owner, OperandSize size, const Data &value
 	ext_vm_entry_(NULL), begin_section_cryptor_(NULL), end_section_cryptor_(NULL), seh_handler_(NULL)
 {
 	vm_command_info_list_ = new IntelCommandInfoList(size);
+	memset(raw_value_pos_, 0, sizeof(raw_value_pos_));
 	type_ = cmDB;
 #ifdef CHECKED
 	update_hash();
@@ -94,6 +99,8 @@ IntelCommand::IntelCommand(IFunction *owner, OperandSize size, const Data &value
 
 void IntelCommand::Init(IntelCommandType type, IntelOperand operand1, IntelOperand operand2, IntelOperand operand3)
 {
+	raw_dump_.clear();
+	memset(raw_value_pos_, 0, sizeof(raw_value_pos_));
 	type_ = type;
 	operand_[0] = operand1;
 	operand_[1] = operand2;
@@ -134,9 +141,11 @@ IntelCommand::IntelCommand(IFunction *owner, const IntelCommand &src)
 	original_dump_size_ = src.original_dump_size_;
 	vex_operand_ = src.vex_operand_;
 	seh_handler_ = src.seh_handler_;
+	raw_dump_ = src.raw_dump_;
 
 	for (size_t i = 0; i < _countof(operand_); i++) {
 		operand_[i] = src.operand_[i];
+		raw_value_pos_[i] = src.raw_value_pos_[i];
 	}
 #ifdef CHECKED
 	update_hash();
@@ -6495,6 +6504,16 @@ size_t IntelCommand::ReadFromFile(IArchitecture &file)
 	}
 
 	original_dump_size_ = dump_size();
+	if (type_ != cmDB) {
+		raw_dump_.clear();
+		raw_dump_.reserve(original_dump_size_);
+		for (i = 0; i < original_dump_size_; i++) {
+			raw_dump_.push_back(dump(i));
+		}
+		for (i = 0; i < _countof(operand_); i++) {
+			raw_value_pos_[i] = operand_[i].value_pos;
+		}
+	}
 
 	return original_dump_size_; 
 }
@@ -8518,6 +8537,18 @@ void IntelCommand::CompileToNative()
 			}
 			break;
 
+		case cmPcmpeqb:
+		case cmPcmpeqw:
+		case cmPcmpeqd:
+			operand = &operand_[0];
+			operand1 = &operand_[1];
+			if ((operand->type | operand1->type) & otXMMRegistr)
+				PushBytePrefix(0x66);
+			PushByte(0x0f);
+			PushByte((type_ == cmPcmpeqb) ? 0x74 : ((type_ == cmPcmpeqw) ? 0x75 : 0x76));
+			PushRegAndRM(0, 1, ctx);
+			break;
+
 		case cmCrc:
 			PushByte(0xcc);
 			break;
@@ -8540,8 +8571,20 @@ void IntelCommand::CompileToNative()
 		}
 	}
 
-	if (command_pos_ == dump_size())
-		throw std::runtime_error("Runtime error at CompileToNative: " + text());
+	if (command_pos_ == dump_size()) {
+		if (!raw_dump_.empty() && !ctx.rex_prefix) {
+			BaseCommand::clear();
+			for (size_t k = 0; k < raw_dump_.size(); k++) {
+				PushByte(raw_dump_[k]);
+			}
+			for (size_t k = 0; k < _countof(operand_); k++) {
+				operand_[k].value_pos = raw_value_pos_[k];
+			}
+			command_pos_ = 0;
+		} else {
+			throw std::runtime_error("Runtime error at CompileToNative: " + text());
+		}
+	}
 
 	for (i = 0; i < _countof(operand_); i++) {
 		operand = &operand_[i];
@@ -8670,6 +8713,21 @@ void IntelCommand::ReadFromBuffer(Buffer &buffer, IArchitecture &file)
 				if (opt & 0x4000)
 					operand->scale_registr = buffer.ReadByte();
 				operand->address_size = (opt & 0x2000) ? static_cast<OperandSize>(buffer.ReadByte()) : size_;
+			}
+		}
+		if (r & 0x04) {
+			raw_dump_.clear();
+			raw_dump_.reserve(original_dump_size_);
+			BaseCommand::clear();
+			for (i = 0; i < original_dump_size_; i++) {
+				uint8_t raw_byte = buffer.ReadByte();
+				raw_dump_.push_back(raw_byte);
+				PushByte(raw_byte);
+			}
+			for (j = 0; j < (r & 3); j++) {
+				uint8_t vp = buffer.ReadByte();
+				operand_[j].value_pos = vp;
+				raw_value_pos_[j] = vp;
 			}
 		}
 	}
@@ -23802,10 +23860,11 @@ bool PEIntelLoader::Prepare(const CompileContext &ctx)
 									} else {
 										command->Init(cmMov, operand, IntelOperand(otValue, cpu_address_size(), 0, 0, NEED_FIXUP));
 									}
+									command->AddLink((int)k, ltOffset, it->second);
 								} else {
 									command->Init(cmPush, IntelOperand(otValue, cpu_address_size(), 0, 0, NEED_FIXUP));
-								}
-								command->AddLink((int)k, ltOffset, it->second); 
+									command->AddLink(0, ltOffset, it->second);
+								} 
 							} else {
 								throw std::runtime_error(string_format("Unknown loader string: %X", static_cast<uint32_t>(operand.value)));
 							}
@@ -25759,10 +25818,11 @@ bool MacIntelLoader::Prepare(const CompileContext &ctx)
 									} else {
 										command->Init(cmMov, operand, IntelOperand(otValue, cpu_address_size(), 0, 0, NEED_FIXUP));
 									}
+									command->AddLink((int)k, ltOffset, it->second);
 								} else {
 									command->Init(cmPush, IntelOperand(otValue, cpu_address_size(), 0, 0, NEED_FIXUP));
-								}
-								command->AddLink((int)k, ltOffset, it->second); 
+									command->AddLink(0, ltOffset, it->second);
+								} 
 							} else {
 								throw std::runtime_error(string_format("Unknown loader string: %X", static_cast<uint32_t>(operand.value)));
 							}
@@ -27486,10 +27546,11 @@ bool ELFIntelLoader::Prepare(const CompileContext &ctx)
 									} else {
 										command->Init(cmMov, operand, IntelOperand(otValue, cpu_address_size(), 0, 0, NEED_FIXUP));
 									}
+									command->AddLink((int)k, ltOffset, it->second);
 								} else {
 									command->Init(cmPush, IntelOperand(otValue, cpu_address_size(), 0, 0, NEED_FIXUP));
-								}
-								command->AddLink((int)k, ltOffset, it->second); 
+									command->AddLink(0, ltOffset, it->second);
+								} 
 							} else {
 								throw std::runtime_error(string_format("Unknown loader string: %X", static_cast<uint32_t>(operand.value)));
 							}

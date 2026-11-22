@@ -784,19 +784,21 @@ bool WINAPI ExportedIsDebuggerPresent(bool check_kernel_mode)
 
 	typedef NTSTATUS(NTAPI tNtQueryInformationProcess)(HANDLE ProcessHandle, PROCESSINFOCLASS ProcessInformationClass, PVOID ProcessInformation, ULONG ProcessInformationLength, PULONG ReturnLength);
 	if (sc_query_information_process) {
-		HANDLE debug_object;
+		HANDLE debug_object = 0;
 		if (NT_SUCCESS(reinterpret_cast<tNtQueryInformationProcess *>(syscall | sc_query_information_process)(process, ProcessDebugPort, &debug_object, sizeof(debug_object), NULL)) && debug_object != 0)
 			return true;
 		debug_object = 0;
-		if (NT_SUCCESS(reinterpret_cast<tNtQueryInformationProcess *>(syscall | sc_query_information_process)(process, ProcessDebugObjectHandle, &debug_object, sizeof(debug_object), reinterpret_cast<PULONG>(&debug_object)))
-			|| debug_object == 0)
+		ULONG return_length = 0;
+		if (NT_SUCCESS(reinterpret_cast<tNtQueryInformationProcess *>(syscall | sc_query_information_process)(process, ProcessDebugObjectHandle, &debug_object, sizeof(debug_object), &return_length))
+			&& debug_object != 0)
 			return true;
 	}
 	else if (tNtQueryInformationProcess *query_information_process = reinterpret_cast<tNtQueryInformationProcess *>(InternalGetProcAddress(ntdll, VMProtectDecryptStringA("NtQueryInformationProcess")))) {
-		HANDLE debug_object;
+		HANDLE debug_object = 0;
 		if (NT_SUCCESS(query_information_process(process, ProcessDebugPort, &debug_object, sizeof(debug_object), NULL)) && debug_object != 0)
 			return true;
-		if (NT_SUCCESS(query_information_process(process, ProcessDebugObjectHandle, &debug_object, sizeof(debug_object), NULL)))
+		debug_object = 0;
+		if (NT_SUCCESS(query_information_process(process, ProcessDebugObjectHandle, &debug_object, sizeof(debug_object), NULL)) && debug_object != 0)
 			return true;
 	}
 

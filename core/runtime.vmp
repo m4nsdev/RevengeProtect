@@ -715,7 +715,9 @@ for k = 1, functions:count() do
 					end
 				end
 				
+				local has_raw_bytes = (command:type() ~= IntelCommandType.Db)
 				data = data .. ByteToChar(p
+										+ Ord(has_raw_bytes) * 0x04
 										+ Ord(command:preffix() ~= 0) * 0x8
 										+ Ord(command:size() > 255) * 0x10
 										+ Ord(command:link()) * 0x20
@@ -827,6 +829,14 @@ for k = 1, functions:count() do
 							end
 						end
 					end
+					if (has_raw_bytes) then
+						for j = 1, command:size() do
+							data = data .. ByteToChar(command:dump(j))
+						end
+						for j = 1, p do
+							data = data .. ByteToChar(command:operand(j):valuePos())
+						end
+					end
 				end
 			end
 		end
@@ -925,14 +935,18 @@ if (file:file():format() == "PE") then
 		cfg_names = {}
 		table.insert(cfg_names, "_freefls")
 		table.insert(cfg_names, "__freefls@4")
+		table.insert(cfg_names, "__vcrt_freefls")
+		local found_cfg = false
 		for _, line in ipairs(cfg_names) do
 			map_function = map_functions:itemByName(line)
 			if (map_function) then
 				data = data .. DWordToChar(map_function:address() - file:imageBase())
 				count = count + 1
-			else
-				print(line .. " not found!!!")
+				found_cfg = true
 			end
+		end
+		if (not found_cfg) then
+			print("freefls CFG symbol not found!!!")
 		end
 	end
 	code_data = code_data .. DWordToChar(count) .. data
