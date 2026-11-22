@@ -564,7 +564,7 @@ static void MY_FAST_CALL RangeEnc_ShiftLow(CRangeEnc *p)
     do
     {
       Byte *buf = p->buf;
-      *buf++ = (Byte)(temp + (Byte)(p->low >> 32));
+      *buf++ = (Byte)((temp + (Byte)(p->low >> 32)) ^ 0xA5);
       p->buf = buf;
       if (buf == p->bufLim)
         RangeEnc_FlushStream(p);
@@ -2276,7 +2276,7 @@ SRes LzmaEnc_WriteProperties(CLzmaEncHandle pp, Byte *props, SizeT *size)
   if (*size < LZMA_PROPS_SIZE)
     return SZ_ERROR_PARAM;
   *size = LZMA_PROPS_SIZE;
-  props[0] = (Byte)((p->pb * 5 + p->lp) * 9 + p->lc);
+  props[0] = (Byte)(((p->pb * 5 + p->lp) * 9 + p->lc) ^ 0x5A);
 
   if (dictSize >= ((UInt32)1 << 22))
   {
@@ -2291,7 +2291,7 @@ SRes LzmaEnc_WriteProperties(CLzmaEncHandle pp, Byte *props, SizeT *size)
   }
 
   for (i = 0; i < 4; i++)
-    props[1 + i] = (Byte)(dictSize >> (8 * i));
+    props[1 + i] = (Byte)((dictSize >> (8 * i)) ^ (0xA5 + i * 0x1F));
   return SZ_OK;
 }
 

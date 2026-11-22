@@ -28,7 +28,7 @@
 #define kBitModelTotal (1 << kNumBitModelTotalBits)
 #define kNumMoveBits 5
 
-#define RC_READ_BYTE (*Buffer++)
+#define RC_READ_BYTE ((*Buffer++) ^ 0xA5)
 
 #define RC_INIT2 Code = 0; Range = 0xFFFFFFFF; \
   { int i; for(i = 0; i < 5; i++) { RC_TEST; Code = (Code << 8) | RC_READ_BYTE; }}
@@ -122,7 +122,7 @@ int LzmaDecodeProperties(CLzmaProperties *propsRes, const unsigned char *propsDa
   unsigned char prop0;
   if (size < LZMA_PROPERTIES_SIZE)
     return LZMA_RESULT_DATA_ERROR;
-  prop0 = propsData[0];
+  prop0 = (unsigned char)(propsData[0] ^ 0x5A);
   if (prop0 >= (9 * 5 * 5))
     return LZMA_RESULT_DATA_ERROR;
   {
@@ -142,7 +142,7 @@ int LzmaDecodeProperties(CLzmaProperties *propsRes, const unsigned char *propsDa
     int i;
     propsRes->DictionarySize = 0;
     for (i = 0; i < 4; i++)
-      propsRes->DictionarySize += (UInt32)(propsData[1 + i]) << (i * 8);
+      propsRes->DictionarySize += (UInt32)(propsData[1 + i] ^ (unsigned char)(0xA5 + i * 0x1F)) << (i * 8);
     if (propsRes->DictionarySize == 0)
       propsRes->DictionarySize = 1;
   }

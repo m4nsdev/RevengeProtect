@@ -736,7 +736,7 @@ bool WINAPI ExportedIsDebuggerPresent(bool check_kernel_mode)
 					sc_query_information_process = 0x0019;
 				}
 			}
-			else if (os_build_number == WINDOWS_10_22H2) {
+			else if (os_build_number == WINDOWS_10_22H2 || IS_MODERN_WIN10_WIN11_BUILD(os_build_number)) {
 #ifndef _WIN64
 				if (!is_wow64) {
 					sc_query_information_process = 0x00b9;

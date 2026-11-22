@@ -8,7 +8,8 @@
 #define INTERNAL_GPA_ERROR reinterpret_cast<const void *>(3)
 #define CPU_HASH_ERROR reinterpret_cast<const void *>(5)
 
-#define DECRYPT(str, pos) (str[pos] ^ (_rotl32(FACE_STRING_DECRYPT_KEY, static_cast<int>(pos)) + pos))
+#define REVENGE_STRING_STREAM(pos) ((_rotl32(FACE_STRING_DECRYPT_KEY ^ 0xA5A55A5Au, static_cast<int>((pos) & 31)) + static_cast<uint32_t>(pos) * 0x9E3779B9u) ^ 0x5AA55AA5u)
+#define DECRYPT(str, pos) (str[pos] ^ REVENGE_STRING_STREAM(pos))
 
 static void *LoaderAlloc(size_t size)
 {
@@ -68,7 +69,7 @@ NOINLINE int Loader_stricmp(const char *str1, const char *str2, bool is_enc)
 		c1 = *(str1++);
 		c2 = *(str2++);
 		if (is_enc) {
-			c1 ^= static_cast<unsigned char>(_rotl32(FACE_STRING_DECRYPT_KEY, static_cast<int>(pos)) + pos);
+			c1 ^= static_cast<unsigned char>(REVENGE_STRING_STREAM(pos));
 			pos++;
 		}
 		c1 = TOLOWER(c1);
@@ -93,7 +94,7 @@ NOINLINE int Loader_strcmp(const char *str1, const char *str2, bool is_enc)
 		c1 = *(str1++);
 		c2 = *(str2++);
 		if (is_enc) {
-			c1 ^= (_rotl32(FACE_STRING_DECRYPT_KEY, static_cast<int>(pos)) + pos);
+			c1 ^= static_cast<unsigned char>(REVENGE_STRING_STREAM(pos));
 			pos++;
 		}
 		if (!c1)
@@ -118,7 +119,7 @@ NOINLINE int Loader_cmp_module(const char *str1, const char *str2, bool is_enc)
 		c1 = *(str1++);
 		c2 = *(str2++);
 		if (is_enc) {
-			c1 ^= static_cast<unsigned char>(_rotl32(FACE_STRING_DECRYPT_KEY, static_cast<int>(pos)) + pos);
+			c1 ^= static_cast<unsigned char>(REVENGE_STRING_STREAM(pos));
 			pos++;
 		}
 		c1 = TOLOWER(c1);
@@ -390,7 +391,7 @@ void *LoaderGetProcAddress(HMODULE module, const char *proc_name, bool is_enc)
 		if (is_enc) {
 			for (i = 0; i < sizeof(file_name); i++) {
 				char c = proc_name[i];
-				c ^= (_rotl32(FACE_STRING_DECRYPT_KEY, static_cast<int>(i)) + i);
+				c ^= static_cast<char>(REVENGE_STRING_STREAM(i));
 				file_name[i] = c;
 				if (!c)
 					break;
@@ -1652,7 +1653,7 @@ uint32_t WINAPI SetupImage()
 				sc_query_virtual_memory = 0x0023;
 			}
 		}
-		else if (os_build_number == WINDOWS_10_22H2) {
+		else if (os_build_number == WINDOWS_10_22H2 || IS_MODERN_WIN10_WIN11_BUILD(os_build_number)) {
 #ifndef _WIN64
 			if (!is_wow64) {
 				sc_close = 0x018e;
@@ -2374,7 +2375,29 @@ uint32_t WINAPI SetupImage()
 				return LOADER_ERROR;
 			}
 
-			*(reinterpret_cast<void **>(dst_image_base + import_info->Address)) = reinterpret_cast<uint8_t *>(p) - import_info->Key; 
+			{
+				uintptr_t enc = reinterpret_cast<uintptr_t>(p);
+				uint32_t iat_key = static_cast<uint32_t>(import_info->Key);
+				if (iat_key != 0) {
+					int32_t k1 = static_cast<int32_t>(iat_key);
+					int32_t k2 = static_cast<int32_t>((iat_key * 0x9E3779B9u) ^ 0xA5A55A5Au);
+					int32_t k3 = static_cast<int32_t>((iat_key * 0x85EBCA6Bu) ^ 0x5A5AA5A5u);
+					enc -= static_cast<uintptr_t>(static_cast<intptr_t>(k3));
+#ifdef _WIN64
+					enc = _byteswap_uint64(enc);
+#else
+					enc = _byteswap_ulong(static_cast<uint32_t>(enc));
+#endif
+					enc -= static_cast<uintptr_t>(static_cast<intptr_t>(k2));
+#ifdef _WIN64
+					enc = _byteswap_uint64(enc);
+#else
+					enc = _byteswap_ulong(static_cast<uint32_t>(enc));
+#endif
+					enc -= static_cast<uintptr_t>(static_cast<intptr_t>(k1));
+				}
+				*(reinterpret_cast<void **>(dst_image_base + import_info->Address)) = reinterpret_cast<void *>(enc);
+			}
 		}
 
 		i += sizeof(uint32_t);
@@ -2384,7 +2407,27 @@ uint32_t WINAPI SetupImage()
 	// setup internal import
 	for (i = 0; i < data.internal_import_info_size(); i += sizeof(IMPORT_INFO)) {
 		IMPORT_INFO *import_info = reinterpret_cast<IMPORT_INFO *>(image_base + data.internal_import_info() + i);
-		*(reinterpret_cast<void **>(dst_image_base + import_info->Address)) = import_info->Name + dst_image_base - import_info->Key; 
+		uintptr_t enc = reinterpret_cast<uintptr_t>(import_info->Name + dst_image_base);
+		uint32_t iat_key = static_cast<uint32_t>(import_info->Key);
+		if (iat_key != 0) {
+			int32_t k1 = static_cast<int32_t>(iat_key);
+			int32_t k2 = static_cast<int32_t>((iat_key * 0x9E3779B9u) ^ 0xA5A55A5Au);
+			int32_t k3 = static_cast<int32_t>((iat_key * 0x85EBCA6Bu) ^ 0x5A5AA5A5u);
+			enc -= static_cast<uintptr_t>(static_cast<intptr_t>(k3));
+#ifdef _WIN64
+			enc = _byteswap_uint64(enc);
+#else
+			enc = _byteswap_ulong(static_cast<uint32_t>(enc));
+#endif
+			enc -= static_cast<uintptr_t>(static_cast<intptr_t>(k2));
+#ifdef _WIN64
+			enc = _byteswap_uint64(enc);
+#else
+			enc = _byteswap_ulong(static_cast<uint32_t>(enc));
+#endif
+			enc -= static_cast<uintptr_t>(static_cast<intptr_t>(k1));
+		}
+		*(reinterpret_cast<void **>(dst_image_base + import_info->Address)) = reinterpret_cast<void *>(enc);
 	}
 
 	// setup relocations

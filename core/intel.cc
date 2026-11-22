@@ -21409,8 +21409,8 @@ bool IntelImport::Init(const CompileContext &ctx)
 		import_function = iat_info_list_[i].import_function;
 
 		command = AddCommand(value_type, IntelOperand(otValue, cpu_address_size(), 0, (value_type == cmDD) ? rand32() : rand64()));
-		// second operand is a key for decrypt IAT value
-		command->set_operand_value(1, (import_function->options() & ioNative) ? 0 : DWordToInt64(rand32()));
+		// second operand is a key for decrypt IAT value (guarantee non-zero for non-native imports)
+		command->set_operand_value(1, (import_function->options() & ioNative) ? 0 : DWordToInt64(rand32() | 1));
 		command->include_option(roCreateNewBlock);
 		command->include_option(roWritable);
 
@@ -21525,9 +21525,26 @@ bool IntelImport::Init(const CompileContext &ctx)
 				link = command->AddLink(1, ltOffset, iat_command);
 				link->set_sub_value(rand_value);
 
-				// decrypt API`s address in random registr
-				AddCommand(cmLea, IntelOperand(otRegistr, cpu_address_size(), rand_registr), 
-					IntelOperand(otMemory | otRegistr | otValue, cpu_address_size(), rand_registr, iat_command->operand(1).value));
+				// decrypt API`s address in random registr (3-layer flag-neutral lea + bswap + lea + bswap + lea)
+				{
+					uint32_t iat_key = static_cast<uint32_t>(iat_command->operand(1).value);
+					if (iat_key != 0) {
+						int32_t k1 = static_cast<int32_t>(iat_key);
+						int32_t k2 = static_cast<int32_t>((iat_key * 0x9E3779B9u) ^ 0xA5A55A5Au);
+						int32_t k3 = static_cast<int32_t>((iat_key * 0x85EBCA6Bu) ^ 0x5A5AA5A5u);
+						AddCommand(cmLea, IntelOperand(otRegistr, cpu_address_size(), rand_registr),
+							IntelOperand(otMemory | otRegistr | otValue, cpu_address_size(), rand_registr, DWordToInt64(static_cast<uint32_t>(k1))));
+						AddCommand(cmBswap, IntelOperand(otRegistr, cpu_address_size(), rand_registr));
+						AddCommand(cmLea, IntelOperand(otRegistr, cpu_address_size(), rand_registr),
+							IntelOperand(otMemory | otRegistr | otValue, cpu_address_size(), rand_registr, DWordToInt64(static_cast<uint32_t>(k2))));
+						AddCommand(cmBswap, IntelOperand(otRegistr, cpu_address_size(), rand_registr));
+						AddCommand(cmLea, IntelOperand(otRegistr, cpu_address_size(), rand_registr),
+							IntelOperand(otMemory | otRegistr | otValue, cpu_address_size(), rand_registr, DWordToInt64(static_cast<uint32_t>(k3))));
+					} else {
+						AddCommand(cmLea, IntelOperand(otRegistr, cpu_address_size(), rand_registr),
+							IntelOperand(otMemory | otRegistr | otValue, cpu_address_size(), rand_registr, iat_command->operand(1).value));
+					}
+				}
 
 				// restore random registr
 				if (ref_type == cmJmp || ref_type == cmCall) {
@@ -22707,11 +22724,17 @@ PEIntelLoader::PEIntelLoader(IntelFunctionList *owner, OperandSize cpu_address_s
 
 }
 
+static inline uint32_t RevengeStringStream(uint32_t key, size_t pos)
+{
+	uint32_t m = _rotl32(key ^ 0xA5A55A5Au, static_cast<int>(pos & 31));
+	return (m + static_cast<uint32_t>(pos) * 0x9E3779B9u) ^ 0x5AA55AA5u;
+}
+
 Data EncryptString(const char *str, uint32_t key)
 {
 	Data data;
 	for (size_t i = 0; ; i++) {
-		data.PushByte(str[i] ^ static_cast<uint8_t>(_rotl32(key, (int)i) + i));
+		data.PushByte(str[i] ^ static_cast<uint8_t>(RevengeStringStream(key, i)));
 		if (!str[i])
 			break;
 	}
@@ -22722,7 +22745,7 @@ Data EncryptString(const os::unicode_char *str, uint32_t key)
 {
 	Data data;
 	for (size_t i = 0; ; i++) {
-		data.PushWord(str[i] ^ static_cast<uint16_t>(_rotl32(key, (int)i) + i));
+		data.PushWord(str[i] ^ static_cast<uint16_t>(RevengeStringStream(key, i)));
 		if (!str[i])
 			break;
 	}
