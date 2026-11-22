@@ -1,10 +1,12 @@
-VMProtect project
------------------
+RevengeProtect
+--------------
 
-Building
+Binary protector CLI (`RevengeProtect.exe`) based on VMProtect 3.x, customized for the Revenge toolchain.
 
-	POSIX:
-		$ ./build.sh
+Building (Windows, x64 Ultimate):
+    msbuild vcproj\VMProtectCon.vcxproj /p:Configuration=Ultimate;Platform=x64 /p:PlatformToolset=v145 /m
+    msbuild vcproj\VMProtectSDK.vcxproj /p:Configuration=Release;Platform=x64 /p:PlatformToolset=v145 /m
 
-	Windows:
-		> build.bat
+Outputs:
+    bin\64\Ultimate\RevengeProtect.exe
+    bin\64\Release\VMProtectSDK64.dll
