@@ -8825,6 +8825,22 @@ IntelVMCommand *IntelCommand::AddVMCommand(const CompileContext &ctx, IntelComma
 		AddVMCommand(ctx, cmAdd, otNone, vm_command->size(), false, new_options);
 
 		internal_links_.Add(vlCRCValue, address_command, vm_command);
+	} else if ((options & (voNoCRC | voSectionCommand)) == 0 && vm_command->command_type() == cmPush && vm_command->operand_type() == otValue && vm_command->size() > osByte && vm_command->crypt_command() != cmXadd && (rand() & 1)) {
+		new_options |= voNoCRC;
+		uint64_t split_key = rand64();
+		switch (vm_command->size()) {
+		case osWord:
+			split_key = static_cast<uint16_t>(split_key);
+			break;
+		case osDWord:
+			split_key = static_cast<uint32_t>(split_key);
+			break;
+		default:
+			break;
+		}
+		vm_command->set_sub_value(split_key);
+		AddVMCommand(ctx, cmPush, otValue, vm_command->size(), split_key, new_options);
+		AddVMCommand(ctx, cmAdd, otNone, vm_command->size(), false, new_options);
 	}
 
 	if (vm_command->crypt_command() == cmXadd) {
@@ -10049,11 +10065,26 @@ void IntelCommand::CompileToVM(const CompileContext &ctx)
 		break;
 
 	case cmAdd: case cmAdc: case cmXadd:
+		os = operand_[0].size;
+		if (type_ == cmAdd && !save_flags && (rand() & 1)) {
+			// MBA identity: a + b = (a | b) + (a & b) = NAND(~b, ~a) + NOR(~b, ~a)
+			CompileOperand(ctx, 1, coInverse);
+			CompileOperand(ctx, 0, coInverse);
+			AddVMCommand(ctx, cmNand, otNone, os, false);
+
+			CompileOperand(ctx, 1, coInverse);
+			CompileOperand(ctx, 0, coInverse);
+			AddVMCommand(ctx, cmNor, otNone, os, false);
+
+			AddVMCommand(ctx, cmAdd, otNone, os, true);
+			AddVMCommand(ctx, cmPop, otRegistr, size_, regEmpty);
+			CompileOperand(ctx, 0, coSaveResult);
+			break;
+		}
 		if (type_ == cmXadd)
 			CompileOperand(ctx, 0);
 		CompileOperand(ctx, 1);
 
-		os = operand_[0].size;
 		if (type_ == cmAdc) {
 			AddCorrectOperandSizeSection(ctx, osWord, os);
 			AddRegistrAndValueSection(ctx, regEFX, osWord, fl_C);
@@ -10109,10 +10140,21 @@ void IntelCommand::CompileToVM(const CompileContext &ctx)
 		break;
 
 	case cmSub: case cmCmp:
+		os = operand_[0].size;
+		if (type_ == cmSub && !save_flags && (rand() & 1)) {
+			// Two's complement identity: a - b = a + ~b + 1
+			CompileOperand(ctx, 1, coInverse);
+			CompileOperand(ctx, 0);
+			AddVMCommand(ctx, cmAdd, otNone, os, false);
+			AddVMCommand(ctx, cmPush, otValue, os, 1);
+			AddVMCommand(ctx, cmAdd, otNone, os, true);
+			AddVMCommand(ctx, cmPop, otRegistr, size_, regEmpty);
+			CompileOperand(ctx, 0, coSaveResult);
+			break;
+		}
 		CompileOperand(ctx, 1);
 		CompileOperand(ctx, 0, coInverse);
 
-		os = operand_[0].size;
 		AddVMCommand(ctx, cmAdd, otNone, os, true);
 		AddVMCommand(ctx, cmPop, otRegistr, size_, save_flags ? regEFX : regEmpty);
 
@@ -10183,7 +10225,20 @@ void IntelCommand::CompileToVM(const CompileContext &ctx)
 
 	case cmAnd: case cmTest:
 		os = operand_[0].size;
-		if (rand() & 1) {
+		if (type_ == cmAnd && !save_flags && (rand() % 3) == 0) {
+			// MBA identity: a & b = (a + b) - (a | b) = (a + b) + NOR(a, b) + 1
+			CompileOperand(ctx, 1);
+			CompileOperand(ctx, 0);
+			AddVMCommand(ctx, cmAdd, otNone, os, false);
+
+			CompileOperand(ctx, 1);
+			CompileOperand(ctx, 0);
+			AddVMCommand(ctx, cmNor, otNone, os, false);
+
+			AddVMCommand(ctx, cmAdd, otNone, os, false);
+			AddVMCommand(ctx, cmPush, otValue, os, 1);
+			AddVMCommand(ctx, cmAdd, otNone, os, true);
+		} else if (rand() & 1) {
 			CompileOperand(ctx, 1, coInverse);
 			CompileOperand(ctx, 0, coInverse);
 			AddVMCommand(ctx, cmNor, otNone, os, true);
@@ -10207,7 +10262,20 @@ void IntelCommand::CompileToVM(const CompileContext &ctx)
 
 	case cmXor:
 		os = operand_[0].size;
-		if (rand() & 1) {
+		if (!save_flags && (rand() % 3) == 0) {
+			// MBA identity: a ^ b = (a | b) - (a & b) = NAND(~b, ~a) + NAND(b, a) + 1
+			CompileOperand(ctx, 1, coInverse);
+			CompileOperand(ctx, 0, coInverse);
+			AddVMCommand(ctx, cmNand, otNone, os, false);
+
+			CompileOperand(ctx, 1);
+			CompileOperand(ctx, 0);
+			AddVMCommand(ctx, cmNand, otNone, os, false);
+
+			AddVMCommand(ctx, cmAdd, otNone, os, false);
+			AddVMCommand(ctx, cmPush, otValue, os, 1);
+			AddVMCommand(ctx, cmAdd, otNone, os, true);
+		} else if (rand() & 1) {
 			CompileOperand(ctx, 1, coInverse);
 			CompileOperand(ctx, 0, coInverse);
 			AddVMCommand(ctx, cmNor, otNone, os, false);
@@ -10235,7 +10303,20 @@ void IntelCommand::CompileToVM(const CompileContext &ctx)
 
 	case cmOr:
 		os = operand_[0].size;
-		if (rand() & 1) {
+		if (!save_flags && (rand() % 3) == 0) {
+			// MBA identity: a | b = (a + b) - (a & b) = (a + b) + NAND(a, b) + 1
+			CompileOperand(ctx, 1);
+			CompileOperand(ctx, 0);
+			AddVMCommand(ctx, cmAdd, otNone, os, false);
+
+			CompileOperand(ctx, 1);
+			CompileOperand(ctx, 0);
+			AddVMCommand(ctx, cmNand, otNone, os, false);
+
+			AddVMCommand(ctx, cmAdd, otNone, os, false);
+			AddVMCommand(ctx, cmPush, otValue, os, 1);
+			AddVMCommand(ctx, cmAdd, otNone, os, true);
+		} else if (rand() & 1) {
 			CompileOperand(ctx, 1);
 			CompileOperand(ctx, 0);
 			AddVMCommand(ctx, cmNor, otNone, os, false);
@@ -16347,13 +16428,77 @@ void IntelFunction::Mutate(const CompileContext &ctx, bool for_virtualization, i
 		bool is_end;
 		if (command->GetCommandInfo(command_info_list)) {
 			GetFreeRegisters(i + 1, free_registr_list);
+			uint16_t arith_flags = fl_O | fl_S | fl_Z | fl_A | fl_P | fl_C;
+			bool all_arith_flags_free = (free_registr_list.change_flags() & arith_flags) == arith_flags;
+			bool cmd_flags_free = (command_info_list.change_flags() & free_registr_list.change_flags()) == command_info_list.change_flags();
+			bool has_link_or_fixup = (command->link() != NULL)
+				|| (command->operand(0).fixup != NULL) || command->operand(0).is_large_value
+				|| (command->operand(1).fixup != NULL) || command->operand(1).is_large_value;
+
+			auto emit_extra = [&](IntelCommandType type, const IntelOperand &op0 = IntelOperand(), const IntelOperand &op1 = IntelOperand()) {
+				IntelCommand *extra = new IntelCommand(this, cpu_address_size(), type, op0, op1);
+				extra->include_option(roNoProgress);
+				if (src_options & roNeedCRC)
+					extra->include_option(roNeedCRC);
+				extra->CompileToNative();
+				extra->set_address_range(address_range);
+				new_command_list.push_back(extra);
+				insert_count++;
+			};
+
+			auto find_scratch_reg = [&](OperandSize min_os, uint8_t exclude0, uint8_t exclude1) -> uint8_t {
+				std::vector<uint8_t> candidates;
+				for (size_t k = 0; k < free_registr_list.count(); k++) {
+					CommandInfo *ci = free_registr_list.item(k);
+					if (ci->type() == atWrite && ci->operand_type() == otRegistr && ci->size() >= cpu_address_size()) {
+						uint8_t r = ci->value();
+						if (r == regESP || r == exclude0 || r == exclude1)
+							continue;
+						if (min_os == osByte && cpu_address_size() == osDWord && r >= 4)
+							continue;
+						candidates.push_back(r);
+					}
+				}
+				if (candidates.empty())
+					return regEmpty;
+				return candidates[rand() % candidates.size()];
+			};
+
 			// mutate command
 			switch (command->type()) {
 			case cmXor:
-				if (command->operand(0).type == otRegistr && command->operand(1).type == otRegistr && command->operand(0).registr == command->operand(1).registr && (rand() & 1)) {
-					// xor reg, reg -> sub reg, reg
-					command->Init(cmSub, command->operand(0), command->operand(1));
-					command->CompileToNative();
+				if (!has_link_or_fixup && command->operand(0).type == otRegistr && command->operand(1).type == otRegistr) {
+					if (command->operand(0).registr == command->operand(1).registr) {
+						if (all_arith_flags_free && command->operand(0).size >= osDWord && (rand() % 3) == 0) {
+							// xor reg, reg -> mov reg, 0
+							OperandSize zsize = command->operand(0).size;
+							IntelOperand zero_op(otValue, zsize, 0, 0);
+							if (zsize == osQWord)
+								zero_op.value_size = osDWord;
+							command->Init(cmMov, command->operand(0), zero_op);
+							command->CompileToNative();
+						} else if (rand() & 1) {
+							// xor reg, reg -> sub reg, reg
+							command->Init(cmSub, command->operand(0), command->operand(1));
+							command->CompileToNative();
+						}
+					} else if (cmd_flags_free && (rand() % 3) == 0) {
+						// MBA live-register XOR: x ^ y = (x | y) - (x & y)
+						OperandSize op_size = command->operand(0).size;
+						uint8_t r0 = command->operand(0).registr;
+						uint8_t r1 = command->operand(1).registr;
+						uint8_t tmp = find_scratch_reg(op_size, r0, r1);
+						if (tmp != regEmpty) {
+							IntelOperand dst_op = command->operand(0);
+							IntelOperand src_op = command->operand(1);
+							IntelOperand tmp_op(otRegistr, op_size, tmp);
+							command->Init(cmMov, tmp_op, dst_op);
+							command->CompileToNative();
+							emit_extra(cmOr, dst_op, src_op);
+							emit_extra(cmAnd, tmp_op, src_op);
+							emit_extra(cmSub, dst_op, tmp_op);
+						}
+					}
 				}
 				break;
 
@@ -16363,52 +16508,156 @@ void IntelFunction::Mutate(const CompileContext &ctx, bool for_virtualization, i
 				break;
 
 			case cmAdd:
-				if (command->operand(0).type == otRegistr && command->operand(0).size == cpu_address_size() 
-					&& ((command->operand(1).type == otRegistr && command->operand(1).registr != regESP) || (command->operand(1).type == otValue && cpu_address_size() != osQWord)) 
-					&& (rand() & 1)) {
-					if ((command_info_list.change_flags() & free_registr_list.change_flags()) == command_info_list.change_flags()) {
-						// add reg, xxxx -> lea reg, [reg + xxxx]
-						IntelOperand second_operand = command->operand(1);
-						second_operand.type |= otMemory;
-						if ((second_operand.type & otValue) && (command->operand(0).registr != regESP)) {
-							second_operand.type |= otRegistr;
-							second_operand.registr = command->operand(0).registr;
-						} else {
-							second_operand.type |= otBaseRegistr;
-							second_operand.base_registr = command->operand(0).registr;
+				if (!has_link_or_fixup && command->operand(0).type == otRegistr && cmd_flags_free) {
+					OperandSize op_size = command->operand(0).size;
+					uint8_t r0 = command->operand(0).registr;
+					if (command->operand(1).type == otRegistr && command->operand(1).registr != regESP) {
+						uint8_t r1 = command->operand(1).registr;
+						uint8_t tmp = (r0 != r1 && (rand() % 3) == 0) ? find_scratch_reg(op_size, r0, r1) : regEmpty;
+						if (tmp != regEmpty) {
+							// MBA live-register ADD: x + y = (x ^ y) + 2*(x & y)
+							IntelOperand dst_op = command->operand(0);
+							IntelOperand src_op = command->operand(1);
+							IntelOperand tmp_op(otRegistr, op_size, tmp);
+							command->Init(cmMov, tmp_op, dst_op);
+							command->CompileToNative();
+							emit_extra(cmXor, dst_op, src_op);
+							emit_extra(cmAnd, tmp_op, src_op);
+							emit_extra(cmAdd, tmp_op, tmp_op);
+							emit_extra(cmAdd, dst_op, tmp_op);
+						} else if (op_size == cpu_address_size() && (rand() & 1)) {
+							// add reg, reg2 -> lea reg, [reg + reg2]
+							IntelOperand second_operand = command->operand(1);
+							second_operand.type |= otMemory | otBaseRegistr;
+							second_operand.base_registr = r0;
 							if ((second_operand.base_registr & 7) == regEBP) {
 								second_operand.type |= otValue;
 								second_operand.value_size = osByte;
 								second_operand.value = 0;
 							}
+							command->Init(cmLea, command->operand(0), second_operand);
+							command->CompileToNative();
 						}
-
-						command->Init(cmLea, command->operand(0), second_operand);
-						command->CompileToNative();
+					} else if (command->operand(1).type == otValue) {
+						uint64_t val = command->operand(1).value;
+						uint64_t neg_val = 0 - val;
+						int mode = rand() % 3;
+						if (mode == 0 && op_size == cpu_address_size() && DWordToInt64(static_cast<uint32_t>(val)) == val) {
+							// add reg, imm -> lea reg, [reg + imm] (64-bit & 32-bit)
+							IntelOperand second_operand = command->operand(1);
+							second_operand.type |= otMemory;
+							if (r0 != regESP) {
+								second_operand.type |= otRegistr;
+								second_operand.registr = r0;
+							} else {
+								second_operand.type |= otBaseRegistr;
+								second_operand.base_registr = r0;
+							}
+							second_operand.value_size = (ByteToInt64(static_cast<uint8_t>(val)) == val) ? osByte : osDWord;
+							command->Init(cmLea, command->operand(0), second_operand);
+							command->CompileToNative();
+						} else if (mode == 1 && (op_size < osQWord || DWordToInt64(static_cast<uint32_t>(neg_val)) == neg_val)) {
+							// add reg, imm -> sub reg, -imm
+							IntelOperand second_operand = command->operand(1);
+							second_operand.value = neg_val;
+							if (op_size == osByte)
+								second_operand.value_size = osByte;
+							else if (op_size == osWord)
+								second_operand.value_size = (ByteToInt64(static_cast<uint8_t>(neg_val)) == neg_val) ? osByte : osWord;
+							else
+								second_operand.value_size = (ByteToInt64(static_cast<uint8_t>(neg_val)) == neg_val) ? osByte : osDWord;
+							command->Init(cmSub, command->operand(0), second_operand);
+							command->CompileToNative();
+						}
 					}
 				}
 				break;
 
 			case cmSub:
-				if (command->operand(0).type == otRegistr && command->operand(0).size == cpu_address_size() 
-					&& (command->operand(1).type == otValue && cpu_address_size() != osQWord)
-					&& (rand() & 1)) {
-					if ((command_info_list.change_flags() & free_registr_list.change_flags()) == command_info_list.change_flags()) {
-						// sub reg, xxxx -> lea reg, [reg - xxxx]
-						IntelOperand second_operand = command->operand(1);
-						second_operand.type |= otMemory;
-						if (command->operand(0).registr != regESP) {
-							second_operand.type |= otRegistr;
-							second_operand.registr = command->operand(0).registr;
-						} else {
-							second_operand.type |= otBaseRegistr;
-							second_operand.base_registr = command->operand(0).registr;
+				if (!has_link_or_fixup && command->operand(0).type == otRegistr && cmd_flags_free) {
+					OperandSize op_size = command->operand(0).size;
+					uint8_t r0 = command->operand(0).registr;
+					if (command->operand(1).type == otRegistr && command->operand(1).registr != r0 && (rand() % 3) == 0) {
+						uint8_t r1 = command->operand(1).registr;
+						uint8_t tmp = find_scratch_reg(op_size, r0, r1);
+						if (tmp != regEmpty) {
+							// MBA live-register SUB: x - y = (x ^ y) - 2*(~x & y)
+							IntelOperand dst_op = command->operand(0);
+							IntelOperand src_op = command->operand(1);
+							IntelOperand tmp_op(otRegistr, op_size, tmp);
+							command->Init(cmMov, tmp_op, dst_op);
+							command->CompileToNative();
+							emit_extra(cmNot, tmp_op);
+							emit_extra(cmXor, dst_op, src_op);
+							emit_extra(cmAnd, tmp_op, src_op);
+							emit_extra(cmAdd, tmp_op, tmp_op);
+							emit_extra(cmSub, dst_op, tmp_op);
 						}
-						second_operand.value = 0 - second_operand.value;
-
-						command->Init(cmLea, command->operand(0), second_operand);
-						command->CompileToNative();
+					} else if (command->operand(1).type == otValue) {
+						uint64_t neg_val = 0 - command->operand(1).value;
+						int mode = rand() % 3;
+						if (mode == 0 && op_size == cpu_address_size() && DWordToInt64(static_cast<uint32_t>(neg_val)) == neg_val) {
+							// sub reg, imm -> lea reg, [reg - imm] (64-bit & 32-bit)
+							IntelOperand second_operand = command->operand(1);
+							second_operand.type |= otMemory;
+							if (r0 != regESP) {
+								second_operand.type |= otRegistr;
+								second_operand.registr = r0;
+							} else {
+								second_operand.type |= otBaseRegistr;
+								second_operand.base_registr = r0;
+							}
+							second_operand.value = neg_val;
+							second_operand.value_size = (ByteToInt64(static_cast<uint8_t>(neg_val)) == neg_val) ? osByte : osDWord;
+							command->Init(cmLea, command->operand(0), second_operand);
+							command->CompileToNative();
+						} else if (mode == 1 && (op_size < osQWord || DWordToInt64(static_cast<uint32_t>(neg_val)) == neg_val)) {
+							// sub reg, imm -> add reg, -imm
+							IntelOperand second_operand = command->operand(1);
+							second_operand.value = neg_val;
+							if (op_size == osByte)
+								second_operand.value_size = osByte;
+							else if (op_size == osWord)
+								second_operand.value_size = (ByteToInt64(static_cast<uint8_t>(neg_val)) == neg_val) ? osByte : osWord;
+							else
+								second_operand.value_size = (ByteToInt64(static_cast<uint8_t>(neg_val)) == neg_val) ? osByte : osDWord;
+							command->Init(cmAdd, command->operand(0), second_operand);
+							command->CompileToNative();
+						}
 					}
+				}
+				break;
+
+			case cmNot:
+				if (!has_link_or_fixup && command->operand(0).type == otRegistr && all_arith_flags_free && (rand() & 1)) {
+					// ~x = -x - 1
+					IntelOperand dst_op = command->operand(0);
+					command->Init(cmNeg, dst_op);
+					command->CompileToNative();
+					emit_extra(cmDec, dst_op);
+				}
+				break;
+
+			case cmNeg:
+				if (!has_link_or_fixup && command->operand(0).type == otRegistr && all_arith_flags_free && (rand() & 1)) {
+					// -x = ~x + 1
+					IntelOperand dst_op = command->operand(0);
+					command->Init(cmNot, dst_op);
+					command->CompileToNative();
+					emit_extra(cmInc, dst_op);
+				}
+				break;
+
+			case cmMov:
+				if (!has_link_or_fixup && !for_virtualization && command->operand(0).type == otRegistr && command->operand(1).type == otValue
+					&& command->operand(0).size == osDWord && all_arith_flags_free && (rand() % 3) == 0) {
+					// mov reg32, imm32 -> mov reg32, imm32 ^ key; xor reg32, key
+					uint32_t key = rand32();
+					uint32_t enc = static_cast<uint32_t>(command->operand(1).value) ^ key;
+					IntelOperand dst_op = command->operand(0);
+					command->Init(cmMov, dst_op, IntelOperand(otValue, osDWord, 0, DWordToInt64(enc)));
+					command->CompileToNative();
+					emit_extra(cmXor, dst_op, IntelOperand(otValue, osDWord, 0, DWordToInt64(key)));
 				}
 				break;
 
@@ -16429,6 +16678,23 @@ void IntelFunction::Mutate(const CompileContext &ctx, bool for_virtualization, i
 				break;
 			}
 			is_end = command_info_list.GetInfo(atWrite, otBaseRegistr, regEIP) != NULL;
+			if (!is_end && !for_virtualization && all_arith_flags_free && !has_link_or_fixup
+				&& command->operand(0).type == otRegistr && command->operand(0).size == cpu_address_size()
+				&& command->operand(0).registr != regESP && (rand() % 5) == 0) {
+				// Non-linear live-register involution: f(x) = x (cannot be stripped by DCE)
+				IntelOperand live_op(otRegistr, cpu_address_size(), command->operand(0).registr);
+				if (rand() & 1) {
+					// ~(-(~x)) - 1 == (x + 1) - 1 == x
+					emit_extra(cmNot, live_op);
+					emit_extra(cmNeg, live_op);
+					emit_extra(cmDec, live_op);
+				} else {
+					// ~(-(x + 1)) == ~(-x - 1) == x
+					emit_extra(cmInc, live_op);
+					emit_extra(cmNeg, live_op);
+					emit_extra(cmNot, live_op);
+				}
+			}
 		} else {
 			is_end = true;
 		}
@@ -27855,13 +28121,24 @@ IntelCommand *IntelVirtualMachine::AddReadCommand(OperandSize size, OpcodeCrypto
 {
 	size_t c = processor_->count();
 	OperandSize mov_size = (size < osDWord) ? osDWord : size;
+	size_t step = OperandSizeToValue(size);
 	if (backward_direction_) {
-		processor_->AddCommand(cmSub, IntelOperand(otRegistr, processor_->cpu_address_size(), pcode_registr_), IntelOperand(otValue, processor_->cpu_address_size(), 0, OperandSizeToValue(size)));
-		processor_->AddCommand((mov_size == size) ? cmMov : cmMovzx, IntelOperand(otRegistr, mov_size, registr), IntelOperand(otMemory | otRegistr, size, pcode_registr_));
+		if (rand() & 1) {
+			processor_->AddCommand(cmSub, IntelOperand(otRegistr, processor_->cpu_address_size(), pcode_registr_), IntelOperand(otValue, processor_->cpu_address_size(), 0, step));
+			processor_->AddCommand((mov_size == size) ? cmMov : cmMovzx, IntelOperand(otRegistr, mov_size, registr), IntelOperand(otMemory | otRegistr, size, pcode_registr_));
+		} else {
+			processor_->AddCommand((mov_size == size) ? cmMov : cmMovzx, IntelOperand(otRegistr, mov_size, registr), IntelOperand(otMemory | otRegistr | otValue, size, pcode_registr_, 0 - static_cast<uint64_t>(step)));
+			processor_->AddCommand(cmSub, IntelOperand(otRegistr, processor_->cpu_address_size(), pcode_registr_), IntelOperand(otValue, processor_->cpu_address_size(), 0, step));
+		}
 	}
 	else {
-		processor_->AddCommand((mov_size == size) ? cmMov : cmMovzx, IntelOperand(otRegistr, mov_size, registr), IntelOperand(otMemory | otRegistr, size, pcode_registr_));
-		processor_->AddCommand(cmAdd, IntelOperand(otRegistr, processor_->cpu_address_size(), pcode_registr_), IntelOperand(otValue, processor_->cpu_address_size(), 0, OperandSizeToValue(size)));
+		if (rand() & 1) {
+			processor_->AddCommand((mov_size == size) ? cmMov : cmMovzx, IntelOperand(otRegistr, mov_size, registr), IntelOperand(otMemory | otRegistr, size, pcode_registr_));
+			processor_->AddCommand(cmAdd, IntelOperand(otRegistr, processor_->cpu_address_size(), pcode_registr_), IntelOperand(otValue, processor_->cpu_address_size(), 0, step));
+		} else {
+			processor_->AddCommand(cmAdd, IntelOperand(otRegistr, processor_->cpu_address_size(), pcode_registr_), IntelOperand(otValue, processor_->cpu_address_size(), 0, step));
+			processor_->AddCommand((mov_size == size) ? cmMov : cmMovzx, IntelOperand(otRegistr, mov_size, registr), IntelOperand(otMemory | otRegistr | otValue, size, pcode_registr_, 0 - static_cast<uint64_t>(step)));
+		}
 	}
 
 	if (command_cryptor) {
@@ -27898,18 +28175,57 @@ void IntelVirtualMachine::AddEndHandlerCommands(IntelCommand *to_command, Opcode
 {
 	IntelCommand *command;
 	if (type_ == vtAdvanced) {
+		OperandSize addr_size = processor_->cpu_address_size();
 		IntelRegistrList registr_list = free_registr_list_;
 		uint8_t reg1 = registr_list.GetRandom();
 		AddReadCommand(osDWord, command_cryptor, reg1);
-		if (processor_->cpu_address_size() == osQWord)
-			processor_->AddCommand(cmMovsxd, IntelOperand(otRegistr, processor_->cpu_address_size(), reg1), IntelOperand(otRegistr, osDWord, reg1));
-		processor_->AddCommand(cmAdd, IntelOperand(otRegistr, processor_->cpu_address_size(), jmp_registr_), IntelOperand(otRegistr, processor_->cpu_address_size(), reg1));
+		if (addr_size == osQWord)
+			processor_->AddCommand(cmMovsxd, IntelOperand(otRegistr, addr_size, reg1), IntelOperand(otRegistr, osDWord, reg1));
+
+		uint8_t dispatch_reg = jmp_registr_;
+		switch (rand() % 4) {
+		case 0:
+			// Mode 0: add jmp_reg, reg1
+			processor_->AddCommand(cmAdd, IntelOperand(otRegistr, addr_size, jmp_registr_), IntelOperand(otRegistr, addr_size, reg1));
+			break;
+		case 1:
+			// Mode 1: neg reg1; sub jmp_reg, reg1
+			processor_->AddCommand(cmNeg, IntelOperand(otRegistr, addr_size, reg1));
+			processor_->AddCommand(cmSub, IntelOperand(otRegistr, addr_size, jmp_registr_), IntelOperand(otRegistr, addr_size, reg1));
+			break;
+		case 2:
+			// Mode 2: xadd jmp_reg, reg1; mov reg1, jmp_reg (dispatch via scratch reg1 when !to_command)
+			processor_->AddCommand(cmXadd, IntelOperand(otRegistr, addr_size, jmp_registr_), IntelOperand(otRegistr, addr_size, reg1));
+			if (!to_command) {
+				processor_->AddCommand(cmMov, IntelOperand(otRegistr, addr_size, reg1), IntelOperand(otRegistr, addr_size, jmp_registr_));
+				dispatch_reg = reg1;
+			}
+			break;
+		default:
+			// Mode 3: MBA dispatch update (jmp_reg = (jmp_reg ^ reg1) + 2*(jmp_reg & reg1))
+			if (!registr_list.empty()) {
+				uint8_t reg2 = registr_list.GetRandom();
+				processor_->AddCommand(cmMov, IntelOperand(otRegistr, addr_size, reg2), IntelOperand(otRegistr, addr_size, jmp_registr_));
+				processor_->AddCommand(cmXor, IntelOperand(otRegistr, addr_size, jmp_registr_), IntelOperand(otRegistr, addr_size, reg1));
+				processor_->AddCommand(cmAnd, IntelOperand(otRegistr, addr_size, reg2), IntelOperand(otRegistr, addr_size, reg1));
+				processor_->AddCommand(cmAdd, IntelOperand(otRegistr, addr_size, reg2), IntelOperand(otRegistr, addr_size, reg2));
+				processor_->AddCommand(cmAdd, IntelOperand(otRegistr, addr_size, jmp_registr_), IntelOperand(otRegistr, addr_size, reg2));
+				if (!to_command && (rand() & 1)) {
+					processor_->AddCommand(cmMov, IntelOperand(otRegistr, addr_size, reg1), IntelOperand(otRegistr, addr_size, jmp_registr_));
+					dispatch_reg = reg1;
+				}
+			} else {
+				processor_->AddCommand(cmAdd, IntelOperand(otRegistr, addr_size, jmp_registr_), IntelOperand(otRegistr, addr_size, reg1));
+			}
+			break;
+		}
+
 		if (to_command) {
-			command = processor_->AddCommand(cmJmp, IntelOperand(otValue, processor_->cpu_address_size()));
+			command = processor_->AddCommand(cmJmp, IntelOperand(otValue, addr_size));
 			command->AddLink(0, ltJmp, to_command);
 		}
 		else {
-			command = processor_->AddCommand(cmJmp, IntelOperand(otRegistr, processor_->cpu_address_size(), jmp_registr_));
+			command = processor_->AddCommand(cmJmp, IntelOperand(otRegistr, addr_size, dispatch_reg));
 			command->AddLink(-1, ltJmp);
 		}
 	}
@@ -28745,15 +29061,45 @@ void IntelVirtualMachine::InitCommands(const CompileContext &ctx, const IntelOpc
 		std::swap(registr_order_[i], registr_order_[rand() % registr_order_.size()]);
 	}
 
-	// create commands
+	// create commands (polymorphic vm_entry prologue: break fixed 17-push signature)
 	c = processor_->count();
+	bool flags_saved = false;
+	size_t word_size = OperandSizeToValue(cpu_address_size);
 	for (i = 0; i < registr_order_.size(); i++) {
 		uint8_t reg = registr_order_[i];
 		if (reg == regEFX) {
 			processor_->AddCommand(cmPushf);
+			flags_saved = true;
+		}
+		else if (i > 0 && (rand() % 3) == 0) {
+			// Flag-neutral push replacement: lea rsp, [rsp - word_size]; mov [rsp], reg
+			processor_->AddCommand(cmLea, IntelOperand(otRegistr, cpu_address_size, regESP), IntelOperand(otMemory | otRegistr | otValue, cpu_address_size, regESP, 0 - static_cast<uint64_t>(word_size)));
+			processor_->AddCommand(cmMov, IntelOperand(otMemory | otRegistr, cpu_address_size, regESP), IntelOperand(otRegistr, cpu_address_size, reg));
 		}
 		else {
 			processor_->AddCommand(cmPush, IntelOperand(otRegistr, cpu_address_size, reg));
+		}
+
+		if (i > 0 && (rand() % 3) == 0) {
+			uint8_t saved_reg = registr_order_[rand() % (i + 1)];
+			if (saved_reg != regEFX && saved_reg != regESP) {
+				if (!flags_saved) {
+					// Only flag-preserving instructions before pushfq
+					processor_->AddCommand(cmBswap, IntelOperand(otRegistr, cpu_address_size, saved_reg));
+				} else {
+					switch (rand() % 3) {
+					case 0:
+						processor_->AddCommand(cmNot, IntelOperand(otRegistr, cpu_address_size, saved_reg));
+						break;
+					case 1:
+						processor_->AddCommand(cmNeg, IntelOperand(otRegistr, cpu_address_size, saved_reg));
+						break;
+					default:
+						processor_->AddCommand(cmXor, IntelOperand(otRegistr, cpu_address_size, saved_reg), IntelOperand(otValue, cpu_address_size, 0, DWordToInt64(rand32())));
+						break;
+					}
+				}
+			}
 		}
 	}
 	entry_command_ = processor_->item(c);
@@ -28776,6 +29122,10 @@ void IntelVirtualMachine::InitCommands(const CompileContext &ctx, const IntelOpc
 		AddValueCommand(*entry_cryptor_.item(i - 1), true, pcode_registr_);
 	}
 	processor_->AddCommand(cmAdd, IntelOperand(otRegistr, cpu_address_size, pcode_registr_), IntelOperand(otRegistr, cpu_address_size, reg1));
+	size_t total_frame_alloc = 128 + context_registr_count * OperandSizeToValue(cpu_address_size);
+	size_t split_alloc = ( ((rand() % 7) + 1) * 16 );
+	if (split_alloc >= total_frame_alloc)
+		split_alloc = 32;
 	if (cpu_address_size == osQWord) {
 		if (ctx.file->image_base() >> 32) {
 			IntelRegistrList registr_list = free_registr_list_;
@@ -28784,12 +29134,14 @@ void IntelVirtualMachine::InitCommands(const CompileContext &ctx, const IntelOpc
 			processor_->AddCommand(cmAdd, IntelOperand(otRegistr, cpu_address_size, pcode_registr_), IntelOperand(otRegistr, cpu_address_size, reg1));
 		}
 		processor_->AddCommand(cmMov, IntelOperand(otRegistr, cpu_address_size, stack_registr_), IntelOperand(otRegistr, cpu_address_size, regESP));
-		processor_->AddCommand(cmSub, IntelOperand(otRegistr, cpu_address_size, regESP), IntelOperand(otValue, cpu_address_size, 0, 128 + context_registr_count * OperandSizeToValue(cpu_address_size)));
+		processor_->AddCommand(cmLea, IntelOperand(otRegistr, cpu_address_size, regESP), IntelOperand(otMemory | otRegistr | otValue, cpu_address_size, regESP, 0 - static_cast<uint64_t>(split_alloc)));
+		processor_->AddCommand(cmSub, IntelOperand(otRegistr, cpu_address_size, regESP), IntelOperand(otValue, cpu_address_size, 0, total_frame_alloc - split_alloc));
 		processor_->AddCommand(cmAnd, IntelOperand(otRegistr, cpu_address_size, regESP), IntelOperand(otValue, cpu_address_size, 0, -16));
 	}
 	else {
 		processor_->AddCommand(cmMov, IntelOperand(otRegistr, cpu_address_size, stack_registr_), IntelOperand(otRegistr, cpu_address_size, regESP));
-		processor_->AddCommand(cmSub, IntelOperand(otRegistr, cpu_address_size, regESP), IntelOperand(otValue, cpu_address_size, 0, 128 + context_registr_count * OperandSizeToValue(cpu_address_size)));
+		processor_->AddCommand(cmLea, IntelOperand(otRegistr, cpu_address_size, regESP), IntelOperand(otMemory | otRegistr | otValue, cpu_address_size, regESP, 0 - static_cast<uint64_t>(split_alloc)));
+		processor_->AddCommand(cmSub, IntelOperand(otRegistr, cpu_address_size, regESP), IntelOperand(otValue, cpu_address_size, 0, total_frame_alloc - split_alloc));
 	}
 
 	c = processor_->count();
