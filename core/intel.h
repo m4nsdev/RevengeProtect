@@ -1532,6 +1532,7 @@ private:
 	std::unordered_map<uint64_t, IntelOpcodeInfo::circular_queue> opcode_stack_;
 	ByteList registr_order_;
 	ValueCryptor entry_cryptor_;
+	ValueCryptor crypt_init_cryptor_;
 	OpcodeCryptor *command_cryptor_;
 	std::vector<OpcodeCryptor *> cryptor_list_;
 	IntelCommand *entry_command_;

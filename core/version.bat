@@ -1,8 +1,8 @@
 @ECHO OFF
 echo version.bat: generating build number...
 
-SET version_h=%1core\version.h
-SET info_plist=%1app\vmprotect_gui.app\Contents\Info.plist
+SET "version_h=%~1core\version.h"
+SET "info_plist=%~1app\vmprotect_gui.app\Contents\Info.plist"
 
 SET major=1
 SET minor=0

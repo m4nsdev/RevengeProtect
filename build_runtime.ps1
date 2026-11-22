@@ -28,30 +28,19 @@ if (-not $MsBuild -or -not (Test-Path -LiteralPath $MsBuild)) {
     throw 'MSBuild.exe not found.'
 }
 
-if (-not $PlatformToolset) {
-    $VcRoot = Join-Path $VsRoot 'MSBuild\Microsoft\VC'
-    $LatestVc = Get-ChildItem -Path $VcRoot -Directory | Sort-Object Name -Descending | Select-Object -First 1
-    if ($LatestVc) {
-        $ToolsetBase = Join-Path $LatestVc.FullName 'Platforms\x64\PlatformToolsets'
-        if (Test-Path -LiteralPath (Join-Path $ToolsetBase 'v145')) {
-            $PlatformToolset = 'v145'
-        } elseif (Test-Path -LiteralPath (Join-Path $ToolsetBase 'v143')) {
-            $PlatformToolset = 'v143'
-        }
-    }
-}
-if (-not $PlatformToolset) {
-    $PlatformToolset = 'v143'
-}
-
 function Invoke-MsBuildTarget {
     param(
         [string]$Target,
         [string]$Configuration,
         [string]$Platform = 'x64'
     )
-    Write-Host "[RevengeProtect] Building $Target ($Configuration|$Platform, toolset=$PlatformToolset)..."
-    & $MsBuild $SlnPath "/t:$Target" "/p:Configuration=$Configuration" "/p:Platform=$Platform" "/p:PlatformToolset=$PlatformToolset" /m /nologo /v:minimal
+    $label = if ($PlatformToolset) { "$Configuration|$Platform, toolset=$PlatformToolset" } else { "$Configuration|$Platform" }
+    Write-Host "[RevengeProtect] Building $Target ($label)..."
+    $msArgs = @($SlnPath, "/t:$Target", "/p:Configuration=$Configuration", "/p:Platform=$Platform", '/m', '/nologo', '/v:minimal')
+    if ($PlatformToolset) {
+        $msArgs += "/p:PlatformToolset=$PlatformToolset"
+    }
+    & $MsBuild @msArgs
     if ($LASTEXITCODE -ne 0) {
         throw "MSBuild failed for $Target ($Configuration|$Platform) with exit code $LASTEXITCODE"
     }

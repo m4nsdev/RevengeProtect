@@ -1789,7 +1789,7 @@ uint32_t WINAPI SetupImage()
 #if defined(WIN_DRIVER)
 #else
 	if (data.options() & LOADER_OPTION_CHECK_DEBUGGER) {
-		if (peb->BeingDebugged) {
+		if (peb->BeingDebugged || (peb->NtGlobalFlag & 0x70) != 0) {
 			LoaderMessage(mtDebuggerFound);
 			return LOADER_ERROR;
 		}
@@ -1818,6 +1818,12 @@ uint32_t WINAPI SetupImage()
 				LoaderMessage(mtDebuggerFound);
 				return LOADER_ERROR;
 			}
+			ULONG debug_flags = 1;
+			if (NT_SUCCESS(reinterpret_cast<tNtQueryInformationProcess *>(syscall | sc_query_information_process)(process, ProcessDebugFlags, &debug_flags, sizeof(debug_flags), NULL))
+				&& debug_flags == 0) {
+				LoaderMessage(mtDebuggerFound);
+				return LOADER_ERROR;
+			}
 
 		} else if (tNtQueryInformationProcess *query_information_process = reinterpret_cast<tNtQueryInformationProcess *>(LoaderGetProcAddress(ntdll, reinterpret_cast<const char *>(FACE_NT_QUERY_INFORMATION_PROCESS_NAME), true))) {
 			HANDLE debug_object = 0;
@@ -1827,6 +1833,11 @@ uint32_t WINAPI SetupImage()
 			}
 			debug_object = 0;
 			if (NT_SUCCESS(query_information_process(process, ProcessDebugObjectHandle, &debug_object, sizeof(debug_object), NULL)) && debug_object != 0) {
+				LoaderMessage(mtDebuggerFound);
+				return LOADER_ERROR;
+			}
+			ULONG debug_flags = 1;
+			if (NT_SUCCESS(query_information_process(process, ProcessDebugFlags, &debug_flags, sizeof(debug_flags), NULL)) && debug_flags == 0) {
 				LoaderMessage(mtDebuggerFound);
 				return LOADER_ERROR;
 			}

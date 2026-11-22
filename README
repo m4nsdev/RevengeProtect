@@ -7,9 +7,9 @@ Building & regenerating the embedded x64 runtime (`core\win_runtime64.dll.inc`):
     powershell -ExecutionPolicy Bypass -File .\build_runtime.ps1
 
 Manual MSBuild commands (Windows, x64):
-    msbuild vcproj\VMProtectSDK.vcxproj /p:Configuration=Release;Platform=x64;PlatformToolset=v145 /m
-    msbuild vcproj\win_runtime.vcxproj /p:Configuration=Release;Platform=x64;PlatformToolset=v145 /m
-    msbuild vcproj\VMProtectCon.vcxproj /p:Configuration=Ultimate;Platform=x64;PlatformToolset=v145 /m
+    msbuild vcproj\VMProtectSDK.vcxproj /p:Configuration=Release;Platform=x64 /m
+    msbuild vcproj\win_runtime.vcxproj /p:Configuration=Release;Platform=x64 /m
+    msbuild vcproj\VMProtectCon.vcxproj /p:Configuration=Ultimate;Platform=x64 /m
 
 Outputs:
     bin\64\Ultimate\RevengeProtect.exe

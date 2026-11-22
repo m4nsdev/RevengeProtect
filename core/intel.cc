@@ -28802,6 +28802,10 @@ void IntelVirtualMachine::InitCommands(const CompileContext &ctx, const IntelOpc
 		else
 			processor_->AddCommand(cmMov, IntelOperand(otRegistr, cpu_address_size, reg1), IntelOperand(otValue, cpu_address_size, 0, 0, NEED_FIXUP));
 		processor_->AddCommand(cmSub, IntelOperand(otRegistr, cpu_address_size, crypt_registr_), IntelOperand(otRegistr, cpu_address_size, reg1));
+		crypt_init_cryptor_.Init(cpu_address_size);
+		for (i = 0; i < crypt_init_cryptor_.count(); i++) {
+			AddValueCommand(*crypt_init_cryptor_.item(i), false, crypt_registr_);
+		}
 	}
 	if (type_ == vtAdvanced) {
 		opcode_entry = processor_->AddCommand(cmLea, IntelOperand(otRegistr, cpu_address_size, jmp_registr_), IntelOperand(otMemory | otValue, cpu_address_size, 0, 0, (cpu_address_size == osDWord) ? NEED_FIXUP : LARGE_VALUE));
@@ -30571,8 +30575,8 @@ void IntelVirtualMachine::CompileBlock(CommandBlock &block, bool need_encrypt)
 			if ((cur_command->section_options() & rtBeginSection) == 0)
 				continue;
 
-			crc.Value = cur_command->vm_address();
-			crc2.Value = use_ext_entry ? command->ext_vm_address() : func->item(n)->vm_address();
+			crc.Value = crypt_init_cryptor_.Encrypt(cur_command->vm_address());
+			crc2.Value = crypt_init_cryptor_.Encrypt(use_ext_entry ? command->ext_vm_address() : func->item(n)->vm_address());
 
 			for (j = r - 1; j < n ; j++) {
 				IntelCommand *tmp_command = func->item(j);
@@ -30626,7 +30630,7 @@ void IntelVirtualMachine::CompileBlock(CommandBlock &block, bool need_encrypt)
 		IntelCommand *command = func->item(i);
 		uint64_t address = command->vm_address();
 		if (command->section_options() & rtBeginSection)
-			crc.Value = command->vm_address();
+			crc.Value = crypt_init_cryptor_.Encrypt(command->vm_address());
 		for (j = 0; j < command->count(); j++) {
 			IntelVMCommand *vm_command = command->item(j);
 			if (vm_command->is_data())
@@ -30645,9 +30649,9 @@ void IntelVirtualMachine::CompileBlock(CommandBlock &block, bool need_encrypt)
 
 			if (vm_command->is_end()) {
 				if (command->section_options() & rtBackwardDirection) {
-					crc.Value = address - vm_command->dump_size();
+					crc.Value = crypt_init_cryptor_.Encrypt(address - vm_command->dump_size());
 				} else {
-					crc.Value = address + vm_command->dump_size();
+					crc.Value = crypt_init_cryptor_.Encrypt(address + vm_command->dump_size());
 				}
 			}
 

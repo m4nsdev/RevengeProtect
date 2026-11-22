@@ -1693,14 +1693,24 @@ std::string Core::absolute_output_file_name() const
 bool Core::Compile()
 {
 	uint32_t rand_seed = os::GetTickCount();
+#ifdef VMP_GNU
+	rand_seed ^= static_cast<uint32_t>(getpid()) * 0x9E3779B9u;
+#else
+	rand_seed ^= static_cast<uint32_t>(GetCurrentProcessId()) * 0x9E3779B9u;
+	rand_seed ^= static_cast<uint32_t>(__rdtsc()) ^ static_cast<uint32_t>(__rdtsc() >> 32);
+#endif
+	// SplitMix32 avalanche so back-to-back builds never share a predictable LCG state.
+	rand_seed += 0x9E3779B9u;
+	rand_seed = (rand_seed ^ (rand_seed >> 16)) * 0x85EBCA6Bu;
+	rand_seed = (rand_seed ^ (rand_seed >> 13)) * 0xC2B2AE35u;
+	rand_seed ^= (rand_seed >> 16);
+	if (rand_seed == 0)
+		rand_seed = 1;
 #ifdef CHECKED
 	std::cout << "------------------- Core::Compile " << __LINE__ << " -------------------" << std::endl;
 	std::cout << "rand_seed: " << rand_seed << std::endl;
 	std::cout << "---------------------------------------------------------" << std::endl;
 #endif
-
-	rand_seed = 0;
-	OutputDebugStringA(string_format("rand_seed:%d\n", rand_seed).c_str());
 
 	srand(rand_seed);
 	

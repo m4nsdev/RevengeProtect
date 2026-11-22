@@ -1,24 +1,25 @@
 echo lang.bat: generating default lang strings...
-set lang_in="%1langs\en.lng"
-set lang_out_def="%1core\lang_def.inc"
-set lang_out_enum="%1core\lang_enum.inc"
-set lang_out_info="%1core\lang_info.inc"
+set "lang_root=%~1"
+set lang_in="%lang_root%langs\en.lng"
+set lang_out_def="%lang_root%core\lang_def.inc"
+set lang_out_enum="%lang_root%core\lang_enum.inc"
+set lang_out_info="%lang_root%core\lang_info.inc"
 set lang_def=%lang_out_def%
 set lang_enum=%lang_out_enum%
 set lang_info=%lang_out_info%
 set check_def=0
 if exist %lang_out_def% (
-    set lang_out_def="%1core\lang_def.tmp"
+    set lang_out_def="%lang_root%core\lang_def.tmp"
     set check_def=1
 )
 set check_enum=0
 if exist %lang_out_enum% (
-    set lang_out_enum="%1core\lang_enum.tmp"
+    set lang_out_enum="%lang_root%core\lang_enum.tmp"
     set check_enum=1
 )
 set check_info=0
 if exist %lang_out_info% (
-    set lang_out_info="%1core\lang_info.tmp"
+    set lang_out_info="%lang_root%core\lang_info.tmp"
     set check_info=1
 )
 set area=[Main]

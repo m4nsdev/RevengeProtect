@@ -761,7 +761,7 @@ bool WINAPI ExportedIsDebuggerPresent(bool check_kernel_mode)
 #else
 	PEB32 *peb = reinterpret_cast<PEB32 *>(__readfsdword(0x30));
 #endif
-	if (peb->BeingDebugged)
+	if (peb->BeingDebugged || (peb->NtGlobalFlag & 0x70) != 0)
 		return true;
 
 	{
@@ -792,6 +792,10 @@ bool WINAPI ExportedIsDebuggerPresent(bool check_kernel_mode)
 		if (NT_SUCCESS(reinterpret_cast<tNtQueryInformationProcess *>(syscall | sc_query_information_process)(process, ProcessDebugObjectHandle, &debug_object, sizeof(debug_object), &return_length))
 			&& debug_object != 0)
 			return true;
+		ULONG debug_flags = 1;
+		if (NT_SUCCESS(reinterpret_cast<tNtQueryInformationProcess *>(syscall | sc_query_information_process)(process, ProcessDebugFlags, &debug_flags, sizeof(debug_flags), NULL))
+			&& debug_flags == 0)
+			return true;
 	}
 	else if (tNtQueryInformationProcess *query_information_process = reinterpret_cast<tNtQueryInformationProcess *>(InternalGetProcAddress(ntdll, VMProtectDecryptStringA("NtQueryInformationProcess")))) {
 		HANDLE debug_object = 0;
@@ -799,6 +803,9 @@ bool WINAPI ExportedIsDebuggerPresent(bool check_kernel_mode)
 			return true;
 		debug_object = 0;
 		if (NT_SUCCESS(query_information_process(process, ProcessDebugObjectHandle, &debug_object, sizeof(debug_object), NULL)) && debug_object != 0)
+			return true;
+		ULONG debug_flags = 1;
+		if (NT_SUCCESS(query_information_process(process, ProcessDebugFlags, &debug_flags, sizeof(debug_flags), NULL)) && debug_flags == 0)
 			return true;
 	}
 

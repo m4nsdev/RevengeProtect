@@ -436,6 +436,7 @@ typedef enum _SECTION_INHERIT {
 
 #define ProcessDebugPort (PROCESSINFOCLASS)0x7
 #define ProcessDebugObjectHandle (PROCESSINFOCLASS)0x1e
+#define ProcessDebugFlags (PROCESSINFOCLASS)0x1f
 #define ProcessDefaultHardErrorMode (PROCESSINFOCLASS)0x0c
 #define ProcessInstrumentationCallback (PROCESSINFOCLASS)40
 
@@ -552,7 +553,9 @@ enum {
 typedef struct _PEB32 {
 	BYTE Reserved1[2];
 	BYTE BeingDebugged;
-	BYTE Reserved2[0xa1];
+	BYTE Reserved2[0x65];
+	ULONG NtGlobalFlag;
+	BYTE Reserved3[0x38];
 	ULONG OSMajorVersion;
 	ULONG OSMinorVersion;
 	USHORT OSBuildNumber;
@@ -561,7 +564,9 @@ typedef struct _PEB32 {
 typedef struct _PEB64 {
 	BYTE Reserved1[2];
 	BYTE BeingDebugged;
-	BYTE Reserved2[0x115];
+	BYTE Reserved2[0xb9];
+	ULONG NtGlobalFlag;
+	BYTE Reserved3[0x58];
 	ULONG OSMajorVersion;
 	ULONG OSMinorVersion;
 	USHORT OSBuildNumber;

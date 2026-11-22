@@ -774,9 +774,8 @@ OpcodeCryptor::OpcodeCryptor()
 
 void OpcodeCryptor::Init(OperandSize size)
 {
-	//static CryptCommandType opcode_commands[] = {ccAdd, ccSub, ccXor};
-	//type_ = opcode_commands[rand() % _countof(opcode_commands)];
-	type_ = ccXor;
+	static const CryptCommandType opcode_commands[] = {ccAdd, ccSub, ccXor};
+	type_ = opcode_commands[rand() % _countof(opcode_commands)];
 	ValueCryptor::Init(size);
 }
 
